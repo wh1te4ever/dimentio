@@ -2,6 +2,7 @@
 
 all:
 	xcrun -sdk iphoneos clang -arch arm64 -mios-version-min=10.0 -Weverything libdimentio.c dimentio.c -o dimentio -framework IOKit -framework CoreFoundation -lcompression -Os
+	ldid -S./tfp0.plist ./dimentio
 
 macos:
 	xcrun -sdk macosx clang -arch arm64 -Weverything libdimentio.c dimentio.c -o dimentio -framework IOKit -framework CoreFoundation -lcompression -Os

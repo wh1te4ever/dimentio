@@ -161,7 +161,7 @@ extern const mach_port_t kIOMasterPortDefault;
 
 static int kmem_fd = -1;
 static unsigned t1sz_boot;
-static void *krw_0, *kernrw_0;
+static void *krw_0, *kernrw_0, *libjb_0;
 static kread_func_t kread_buf;
 static task_t tfp0 = TASK_NULL;
 static uint64_t proc_struct_sz;
@@ -309,7 +309,47 @@ kread_buf_krw_0(kaddr_t addr, void *buf, size_t sz) {
 
 static kern_return_t
 kwrite_buf_krw_0(kaddr_t addr, const void *buf, size_t sz) {
+	uint32_t kr = krw_0_kwrite(buf, addr, sz);
+	printf("kwrite_buf_krw_0 kr: 0x%x\n", kr);
 	return krw_0_kwrite(buf, addr, sz) == 0 ? KERN_SUCCESS : KERN_FAILURE;
+}
+
+void khexdump(uint64_t addr, size_t size) {
+    void *data = malloc(size);
+    kread_buf(addr, data, size);
+    char ascii[17];
+    size_t i, j;
+    ascii[16] = '\0';
+    for (i = 0; i < size; ++i) {
+        if ((i % 16) == 0)
+        {
+            printf("[0x%016llx+0x%03zx] ", addr, i);
+//            printf("[0x%016llx] ", i + addr);
+        }
+        
+        printf("%02X ", ((unsigned char*)data)[i]);
+        if (((unsigned char*)data)[i] >= ' ' && ((unsigned char*)data)[i] <= '~') {
+            ascii[i % 16] = ((unsigned char*)data)[i];
+        } else {
+            ascii[i % 16] = '.';
+        }
+        if ((i+1) % 8 == 0 || i+1 == size) {
+            printf(" ");
+            if ((i+1) % 16 == 0) {
+                printf("|  %s \n", ascii);
+            } else if (i+1 == size) {
+                ascii[(i+1) % 16] = '\0';
+                if ((i+1) % 16 <= 8) {
+                    printf(" ");
+                }
+                for (j = (i+1) % 16; j < 16; ++j) {
+                    printf("   ");
+                }
+                printf("|  %s \n", ascii);
+            }
+        }
+    }
+    free(data);
 }
 
 static kern_return_t
@@ -1166,6 +1206,7 @@ lookup_key_in_os_dict(kaddr_t os_dict, const char *key) {
 						}
 						kxpacd(&string_ptr);
 						printf("string_ptr: " KADDR_FMT "\n", string_ptr);
+						khexdump(string_ptr, 0x20);
 						if(kread_buf(string_ptr, cur_key, key_len) != KERN_SUCCESS) {
 							break;
 						}
@@ -1348,7 +1389,16 @@ dimentio_init(kaddr_t _kbase, kread_func_t _kread_buf, kwrite_func_t _kwrite_buf
 		} else if((kmem_fd = open("/dev/kmem", O_RDWR | O_CLOEXEC)) != -1) {
 			kread_buf = kread_buf_kmem;
 			kwrite_buf = kwrite_buf_kmem;
+		} else if((libjb_0 = dlopen("/var/jb/basebin/libjailbreak.dylib", RTLD_LAZY)) != NULL && (krw_0_kread = (krw_0_kread_func_t)dlsym(libjb_0, "kreadbuf")) != NULL && (krw_0_kwrite = (krw_0_kwrite_func_t)dlsym(libjb_0, "kwritebuf")) != NULL) {
+		
+			void *libjb_jbdInitPPLRW = dlsym(libjb_0, "jbdInitPPLRW");
+			int (*jbdInitPPLRW)(void) = libjb_jbdInitPPLRW;
+			int ret = jbdInitPPLRW();
+			printf("jbdInitPPLRW ret: %d\n", ret);
+			kread_buf = kread_buf_krw_0;
+			kwrite_buf = kwrite_buf_krw_0;
 		}
+
 		if(kread_buf != NULL && kwrite_buf != NULL) {
 			setpriority(PRIO_PROCESS, 0, PRIO_MIN);
 			if(pfinder_init_offsets() == KERN_SUCCESS && (!has_proc_struct_sz || kread_buf(proc_struct_sz_ptr, &proc_struct_sz, sizeof(proc_struct_sz)) == KERN_SUCCESS)) {
@@ -1387,10 +1437,14 @@ dimentio(uint64_t *nonce, bool set, uint8_t nonce_d[CC_SHA384_DIGEST_LENGTH], si
 					printf("os_string: " KADDR_FMT "\n", os_string);
 					if(kread_addr(os_string + OS_STRING_STRING_OFF, &string_ptr) == KERN_SUCCESS) {
 						kxpacd(&string_ptr);
-						printf("string_ptr: " KADDR_FMT "\n", string_ptr);
+						printf("string_ptr ??? : " KADDR_FMT "\n", string_ptr);
+						khexdump(string_ptr, 0x20);
 						if(set) {
 							snprintf(nonce_hex, sizeof(nonce_hex), "0x%016" PRIx64, *nonce);
+							printf("huh???\n");
 							if(kwrite_buf(string_ptr, nonce_hex, sizeof(nonce_hex)) == KERN_SUCCESS) {
+								printf("write success???\n");
+								khexdump(string_ptr, 0x20);
 								ret = sync_nonce(nvram_entry);
 							}
 						} else if(kread_buf(string_ptr, nonce_hex, sizeof(nonce_hex)) == KERN_SUCCESS && sscanf(nonce_hex, "0x%016" PRIx64, nonce) == 1) {

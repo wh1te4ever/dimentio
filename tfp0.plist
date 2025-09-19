@@ -14,5 +14,9 @@
 	<true/>
 	<key>com.apple.security.iokit-user-client-class</key>
 	<string>AppleMobileApNonceUserClient</string>
+	<key>com.apple.security.exception.iokit-user-client-class</key>
+	<array>
+		<string>IOSurfaceRootUserClient</string>
+	</array>
 </dict>
 </plist>
