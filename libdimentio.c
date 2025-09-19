@@ -310,7 +310,35 @@ kread_buf_krw_0(kaddr_t addr, void *buf, size_t sz) {
 static kern_return_t
 kwrite_buf_krw_0(kaddr_t addr, const void *buf, size_t sz) {
 	uint32_t kr = krw_0_kwrite(buf, addr, sz);
-	printf("kwrite_buf_krw_0 kr: 0x%x\n", kr);
+	printf("kwrite_buf_krw_0 kr: 0x%x, kbase = 0x%llx\n", kr, kbase);
+
+	typedef uint64_t (*arm64_kcall_t)(uint64_t func, int argc, const uint64_t *argv);
+
+	void *sym_kcall = dlsym(libjb_0, "arm64_kcall");
+	arm64_kcall_t arm64_kcall = (arm64_kcall_t)(uintptr_t)sym_kcall;
+
+	// FFFFFFF00729D49C copyout
+	uint64_t argv_kcall[3] = { (uint64_t)addr, (uint64_t)&buf, (uint64_t)sz };
+	uint64_t ret64 = arm64_kcall((kbase - 0xFFFFFFF007004000) + 0xFFFFFFF00729D49C, 4, argv_kcall);
+	printf("kcall ret64: 0x%llx, addr: 0x%llx, sz: 0x%llx\n", ret64, addr, sz);
+
+	// FFFFFFF005F4334C STR X1, [X0]; RET; gadget
+	// set nonce 0x1111111111111111 please !!!
+	uint64_t argv_kcall_2[2] = { (uint64_t)addr, (uint64_t)0x3131313131317830 };
+	ret64 = arm64_kcall((kbase - 0xFFFFFFF007004000) + 0xFFFFFFF005F4334C, 2, argv_kcall_2);
+	printf("kcall ret64: 0x%llx, addr: 0x%llx, sz: 0x%llx\n", ret64, addr, sz);
+
+	uint64_t argv_kcall_3[2] = { (uint64_t)addr+8, (uint64_t)0x3131313131313131 };
+	ret64 = arm64_kcall((kbase - 0xFFFFFFF007004000) + 0xFFFFFFF005F4334C, 2, argv_kcall_3);
+	printf("kcall ret64: 0x%llx, addr: 0x%llx, sz: 0x%llx\n", ret64, addr, sz);
+
+	uint64_t argv_kcall_4[2] = { (uint64_t)addr+16, (uint64_t)0x3131 };
+	ret64 = arm64_kcall((kbase - 0xFFFFFFF007004000) + 0xFFFFFFF005F4334C, 2, argv_kcall_4);
+	printf("kcall ret64: 0x%llx, addr: 0x%llx, sz: 0x%llx\n", ret64, addr, sz);
+
+
+	return KERN_SUCCESS;
+
 	return krw_0_kwrite(buf, addr, sz) == 0 ? KERN_SUCCESS : KERN_FAILURE;
 }
 
@@ -1395,6 +1423,12 @@ dimentio_init(kaddr_t _kbase, kread_func_t _kread_buf, kwrite_func_t _kwrite_buf
 			int (*jbdInitPPLRW)(void) = libjb_jbdInitPPLRW;
 			int ret = jbdInitPPLRW();
 			printf("jbdInitPPLRW ret: %d\n", ret);
+
+			void *libjb_kcall_init = dlsym(libjb_0, "arm64_kcall_init");
+			int (*kcall_init)(void) = libjb_kcall_init;
+			ret = kcall_init();
+			printf("kcall_init ret: %d\n", ret);
+
 			kread_buf = kread_buf_krw_0;
 			kwrite_buf = kwrite_buf_krw_0;
 		}
